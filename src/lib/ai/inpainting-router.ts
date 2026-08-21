@@ -8,8 +8,9 @@ export interface InpaintingProvider {
 
 /**
  * Routeur Inpainting Réel : Exécution d'inférence par API distante (fal.ai FLUX.1 Fill ou Replicate)
- * Envoie l'image d'origine, le masque PNG généré à partir de la toiture, et le prompt architectural.
- * AUCUN FALLBACK DESSINÉ EN LOCAL : En cas d'erreur ou d'absence de clé, lève une erreur 500 explicite.
+ * Envoie l'image d'origine, le masque PNG généré dynamiquement à partir des coordonnées réelles
+ * détectées par l'API Vision, et le prompt architectural.
+ * AUCUN POLYGONE CODÉ EN DUR : En cas d'erreur ou d'absence de coordonnées valides, lève une erreur explicite.
  */
 export class RealGenerativeInpaintingProvider implements InpaintingProvider {
   name = 'Real_Generative_Inpainting_API';
@@ -34,7 +35,7 @@ export class RealGenerativeInpaintingProvider implements InpaintingProvider {
       params.prompt ||
       `Photorealistic all-black sleek monocrystalline solar panel array neatly mounted on roof tiles, architectural rendering, natural sunlight reflections, realistic shadows, sharp perspective lines matching the roof slope, flush integrated mounting rails, French residential house facade, 8k resolution, photorealism.`;
 
-    // Étape A : Génération du masque noir et blanc sur la toiture
+    // Étape A : Génération dynamique du masque noir et blanc à partir des coordonnées Vision
     const { imageBase64, maskBase64 } = await this.buildRoofMask(params);
 
     // 1. Priorité FAL.AI (FLUX.1 Fill [pro])
@@ -106,7 +107,7 @@ export class RealGenerativeInpaintingProvider implements InpaintingProvider {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            version: 'fb88289504103225307b9ae288640c777449306d4f5b3f2ae50ccbe507e6f994', // flux-fill-pro
+            version: 'fb88289504103225307b9ae288640c777449306d4f5b3f2ae50ccbe507e6f994',
             input: {
               prompt,
               image: imageBase64,
@@ -162,7 +163,8 @@ export class RealGenerativeInpaintingProvider implements InpaintingProvider {
   }
 
   /**
-   * Création du masque binaire (Noir = préservé, Blanc = zone à inpainter par l'IA)
+   * Création dynamique du masque binaire (Noir = préservé, Blanc = zone à inpainter par l'IA)
+   * Exploite les coordonnées exactes retournées par le modèle Vision (Gemini)
    */
   private async buildRoofMask(params: InpaintingParams): Promise<{ imageBase64: string; maskBase64: string }> {
     const cleanImg = params.imageBase64.replace(/^data:image\/\w+;base64,/, '');
@@ -171,11 +173,51 @@ export class RealGenerativeInpaintingProvider implements InpaintingProvider {
     const w = meta.width || 1200;
     const h = meta.height || 800;
 
-    // Définition du polygone de masque selon coordonnées toiture
+    if (!params.roofPolygon || !Array.isArray(params.roofPolygon) || params.roofPolygon.length === 0) {
+      throw new Error('[InpaintingProvider] Impossible de construire le masque : Aucun polygone de toiture (roofPolygon) fourni par le modèle Vision.');
+    }
+
+    const rawPoly = params.roofPolygon;
+    let pointsStr = '';
+
+    // Détection du format : Bounding Box [ymin, xmin, ymax, xmax] ou Polygone de points [[y1, x1], ...] / [[x1, y1], ...]
+    if (rawPoly.length === 4 && typeof rawPoly[0] === 'number' && typeof rawPoly[1] === 'number') {
+      // Format Bounding Box simple [ymin, xmin, ymax, xmax] normalisé (0..1000 ou 0..1)
+      const yminNorm = (rawPoly[0] as unknown as number) > 1 ? (rawPoly[0] as unknown as number) / 1000 : (rawPoly[0] as unknown as number);
+      const xminNorm = (rawPoly[1] as unknown as number) > 1 ? (rawPoly[1] as unknown as number) / 1000 : (rawPoly[1] as unknown as number);
+      const ymaxNorm = (rawPoly[2] as unknown as number) > 1 ? (rawPoly[2] as unknown as number) / 1000 : (rawPoly[2] as unknown as number);
+      const xmaxNorm = (rawPoly[3] as unknown as number) > 1 ? (rawPoly[3] as unknown as number) / 1000 : (rawPoly[3] as unknown as number);
+
+      const pxMin = Math.round(xminNorm * w);
+      const pyMin = Math.round(yminNorm * h);
+      const pxMax = Math.round(xmaxNorm * w);
+      const pyMax = Math.round(ymaxNorm * h);
+
+      pointsStr = `${pxMin},${pyMin} ${pxMax},${pyMin} ${pxMax},${pyMax} ${pxMin},${pyMax}`;
+    } else {
+      // Format liste de points [[p1_1, p1_2], [p2_1, p2_2], ...]
+      const mappedPoints = rawPoly.map((pt) => {
+        const val1 = pt[0];
+        const val2 = pt[1];
+
+        // Détermination des coordonnées x / y (selon convention Gemini [y, x] ou standard [x, y])
+        // Si normalisé 0..1000 ou 0..1 :
+        const n1 = val1 > 1 ? val1 / 1000 : val1;
+        const n2 = val2 > 1 ? val2 / 1000 : val2;
+
+        const px = Math.round(n2 * w);
+        const py = Math.round(n1 * h);
+        return `${px},${py}`;
+      });
+      pointsStr = mappedPoints.join(' ');
+    }
+
+    console.log(`[InpaintingProvider] Masque Sharp généré dynamiquement sur ${w}x${h}px. Points : ${pointsStr}`);
+
     const maskSvg = `
       <svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">
         <rect width="${w}" height="${h}" fill="black" />
-        <polygon points="${Math.round(w * 0.58)},${Math.round(h * 0.30)} ${Math.round(w * 0.90)},${Math.round(h * 0.35)} ${Math.round(w * 0.86)},${Math.round(h * 0.70)} ${Math.round(w * 0.55)},${Math.round(h * 0.65)}" fill="white" />
+        <polygon points="${pointsStr}" fill="white" />
       </svg>
     `;
 

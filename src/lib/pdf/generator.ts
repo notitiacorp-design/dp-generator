@@ -4,6 +4,7 @@ import * as path from 'path';
 import sharp from 'sharp';
 import { CerfaFormData, DPPackGenerationRequest } from '../../types/dp';
 import { getInpaintingRouter } from '../ai/inpainting-router';
+import { getVisionRouter } from '../ai/vision-router';
 
 /**
  * Moteur d'assemblage conforme Cerfa 13404*12 & Dossier DP Réglementaire
@@ -277,10 +278,15 @@ export async function generateDPPackPdf(request: DPPackGenerationRequest): Promi
     const clean = request.dp6AfterImageBase64.replace(/^data:image\/\w+;base64,/, '');
     afterBuffer = Buffer.from(clean, 'base64');
   } else if (beforeBuffer) {
-    // Calcul via le routeur d'inpainting IA
+    // Analyse vision pour détection du polygone puis Inpainting IA
+    const vision = getVisionRouter();
+    const beforeB64 = `data:image/jpeg;base64,${beforeBuffer.toString('base64')}`;
+    const detection = await vision.detectRoof(beforeB64);
+
     const router = getInpaintingRouter();
     const simRes = await router.generateInsertion({
-      imageBase64: `data:image/jpeg;base64,${beforeBuffer.toString('base64')}`,
+      imageBase64: beforeB64,
+      roofPolygon: detection.roofPolygon,
       panelCount: cerfaData.projet.nombrePanneaux || 14,
       projectType: 'SOLAR_PANELS',
     });

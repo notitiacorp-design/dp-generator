@@ -39,6 +39,7 @@ export interface RoofDetectionResult {
 export interface InpaintingParams {
   imageBase64: string;
   maskBase64?: string;
+  roofPolygon?: Array<[number, number]>; // Coordonnées [ymin, xmin, ymax, xmax] ou [[y1, x1], [y2, x2], ...] normalisées 0-1000 issues de l'API Vision
   projectType: 'SOLAR_PANELS' | 'PERGOLA' | 'VERANDA' | 'CARPORT';
   panelCount?: number;
   panelColor?: string;
