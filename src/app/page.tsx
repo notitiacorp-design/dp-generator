@@ -80,10 +80,13 @@ export default function Home() {
     }
   };
 
-  // Calcul de l'insertion paysagère (DP6)
+  // Calcul de l'insertion paysagère (DP6) via API Inpainting Réelle
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
   const handleCalculateInsertion = async () => {
     if (!roofImage) return;
     setCalculatingInsertion(true);
+    setErrorMessage(null);
     try {
       const res = await fetch('/api/ai', {
         method: 'POST',
@@ -95,12 +98,16 @@ export default function Home() {
         }),
       });
       const data = await res.json();
-      if (data.success && data.result) {
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || `Erreur HTTP ${res.status}`);
+      }
+      if (data.result) {
         setInsertionImage(data.result.imageUrl || data.result.imageBase64);
         setActiveTab('after');
       }
-    } catch (e) {
-      console.error(e);
+    } catch (e: any) {
+      console.error('[Frontend] Erreur Inpainting API:', e);
+      setErrorMessage(`Échec inférence IA : ${e.message}`);
     } finally {
       setCalculatingInsertion(false);
     }
@@ -451,11 +458,16 @@ export default function Home() {
                     className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-semibold py-2.5 px-4 rounded transition flex items-center justify-center space-x-2 shadow-sm"
                   >
                     {calculatingInsertion ? (
-                      <span>Calcul et ajustement de l'insertion...</span>
+                      <span>Inférence FLUX.1 Fill en cours...</span>
                     ) : (
                       <span>Calculer l'insertion paysagère (DP6)</span>
                     )}
                   </button>
+                  {errorMessage && (
+                    <div className="mt-2 p-2.5 bg-red-50 border border-red-200 rounded text-[11px] text-red-700 font-mono break-words">
+                      {errorMessage}
+                    </div>
+                  )}
                 </div>
               </div>
 

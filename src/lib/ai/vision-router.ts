@@ -1,155 +1,118 @@
-import { RoofDetectionResult } from '@/types/dp';
+import { RoofDetectionResult } from '../../types/dp';
 
 export interface VisionProvider {
   name: string;
   detectRoof(imageBase64: string): Promise<RoofDetectionResult>;
-  extractCerfaFields(address: string, notes?: string): Promise<Record<string, any>>;
 }
 
 /**
- * Routeur Vision à Deux Étages :
- * 1. Étage Standard : Gemini 2.5 Flash-Lite (coût minime ~0.0012$, structured outputs, extraction standard)
- * 2. Étage Escalade : Gemini 3.7 Flash (si score de confiance < 0.85 ou géométrie complexe)
+ * Routeur Vision Réel : Analyse multimodale par API (Gemini 2.5 Flash / OpenRouter)
+ * Envoie la photo en base64 avec prompt système strict exigeant les coordonnées réelles [ymin, xmin, ymax, xmax]
+ * de la toiture exploitable sans obstacle.
+ * AUCUN FALLBACK DESSINÉ OU COORDONNÉES CODÉES EN DUR : Renvoie une erreur 500 explicite en cas d'échec.
  */
-export class TwoStageGeminiVisionProvider implements VisionProvider {
-  name = 'TwoStageGeminiVision';
+export class RealGeminiVisionProvider implements VisionProvider {
+  name = 'Real_Multimodal_Vision_API';
   private apiKey: string;
   private baseUrl: string;
+  private model: string;
 
   constructor() {
-    this.apiKey = process.env.GEMINI_API_KEY || process.env.OPENROUTER_API_KEY || '';
+    this.apiKey =
+      process.env.GEMINI_API_KEY ||
+      process.env.OPENROUTER_API_KEY ||
+      process.env.OPENAI_API_KEY ||
+      '';
     this.baseUrl = process.env.OPENROUTER_API_KEY
       ? 'https://openrouter.ai/api/v1'
       : 'https://generativelanguage.googleapis.com/v1beta/openai';
+    this.model =
+      process.env.VISION_MODEL ||
+      (process.env.OPENROUTER_API_KEY ? 'google/gemini-2.5-flash' : 'gemini-2.5-flash');
   }
 
   async detectRoof(imageBase64: string): Promise<RoofDetectionResult> {
     if (!this.apiKey) {
-      console.warn('[VisionRouter] Clé API absente. Utilisation du fallback géométrique.');
-      return this.fallbackDetection();
+      const err = '[VisionProvider] ÉCHEC CRITIQUE : Aucune clé API configurée (GEMINI_API_KEY ou OPENROUTER_API_KEY). Impossible d\'exécuter l\'analyse multimodale.';
+      console.error(err);
+      throw new Error(err);
     }
 
-    // ÉTAGE 1 : Gemini 2.5 Flash-Lite
-    try {
-      const flashLiteResult = await this.callVisionModel(
-        process.env.GEMINI_FLASH_LITE_MODEL || 'google/gemini-2.5-flash-lite',
-        imageBase64,
-        `Analyse cette toiture. Retourne un JSON avec:
-        - hasRoof (boolean)
-        - confidence (nombre entre 0 et 1)
-        - roofPolygon (tableau [[ymin,xmin], [ymin,xmax], [ymax,xmax], [ymax,xmin]] normalisé 0-1000)
-        - pitchEstimateDeg (angle en degrés)
-        - orientation (SUD, SUD-EST, etc.)
-        - suggestedPanelCount (nombre de panneaux max)
-        - suggestedPeakPowerKWp (puissance kWc)`
-      );
+    const startTime = Date.now();
+    console.log(`[VisionProvider] Appel API Inférence Vision Réelle (${this.model})...`);
 
-      // Si confiance suffisante (>= 0.85), validation déterministe immédiate
-      if (flashLiteResult.confidence >= 0.85) {
-        return this.validateAndNormalize(flashLiteResult);
+    const systemPrompt = `Tu es un expert en métré photovoltaïque et analyse architecturale.
+Analyse la photographie de toiture fournie et retourne EXCLUSIVEMENT un objet JSON valide avec les propriétés suivantes :
+- hasRoof: (boolean) true si une toiture résidentielle/bâtiment est visible
+- confidence: (number) score de confiance entre 0.0 et 1.0
+- roofPolygon: (tableau de 4 points [ymin, xmin, ymax, xmax] ou coordonnées normalisées 0-1000 délimitant la zone de toiture libre exploitable sans fenêtre de toit ni obstacle)
+- pitchEstimateDeg: (number) estimation de la pente de toiture en degrés (ex: 30)
+- orientation: (string) orientation estimée (ex: "SUD", "SUD-EST", "EST", "OUEST")
+- suggestedPanelCount: (number) nombre optimal de panneaux solaires installables sur le pan libre
+- suggestedPeakPowerKWp: (number) puissance crête estimée en kWc`;
+
+    const cleanBase64 = imageBase64.startsWith('data:')
+      ? imageBase64
+      : `data:image/jpeg;base64,${imageBase64}`;
+
+    try {
+      const res = await fetch(`${this.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: this.model,
+          messages: [
+            {
+              role: 'system',
+              content: systemPrompt,
+            },
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text: 'Détecte la zone de toiture exploitable pour pose de panneaux solaires sans recouvrir les fenêtres de toit.',
+                },
+                {
+                  type: 'image_url',
+                  image_url: { url: cleanBase64 },
+                },
+              ],
+            },
+          ],
+          response_format: { type: 'json_object' },
+          temperature: 0.1,
+        }),
+      });
+
+      const duration = Date.now() - startTime;
+
+      if (!res.ok) {
+        const errText = await res.text();
+        const err = `[VisionProvider] Erreur HTTP ${res.status} de l'API Vision (${this.model}) après ${duration}ms: ${errText}`;
+        console.error(err);
+        throw new Error(err);
       }
 
-      console.log(`[VisionRouter] Confiance basse (${flashLiteResult.confidence}). Escalade vers Gemini 3.7 Flash...`);
+      const data = await res.json();
+      const content = data.choices?.[0]?.message?.content;
+      if (!content) {
+        throw new Error('[VisionProvider] Réponse vide de l\'API Vision');
+      }
 
-      // ÉTAGE 2 : Escalade vers Gemini 3.7 Flash (Hybrid Thinking / Polygones fins)
-      const flash37Result = await this.callVisionModel(
-        process.env.GEMINI_FLASH_37_MODEL || 'google/gemini-2.5-flash',
-        imageBase64,
-        `Analyse approfondie de toiture complexe. Identifie précisément les obstacles (cheminées, fenêtres de toit) et délimite le polygone exploitable pour panneaux solaires.`
-      );
-
-      return this.validateAndNormalize(flash37Result);
-    } catch (e) {
-      console.error('[VisionRouter] Erreur cascade IA:', e);
-      return this.fallbackDetection();
+      console.log(`[VisionProvider] Succès Inférence Vision (${duration}ms). Statut HTTP 200.`);
+      const parsed = JSON.parse(content) as RoofDetectionResult;
+      return parsed;
+    } catch (error: any) {
+      console.error(`[VisionProvider] Erreur d'exécution API Vision:`, error.message);
+      throw error;
     }
-  }
-
-  private async callVisionModel(model: string, imageBase64: string, prompt: string): Promise<RoofDetectionResult> {
-    const res = await fetch(`${this.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: prompt },
-              {
-                type: 'image_url',
-                image_url: {
-                  url: imageBase64.startsWith('data:')
-                    ? imageBase64
-                    : `data:image/jpeg;base64,${imageBase64}`,
-                },
-              },
-            ],
-          },
-        ],
-        response_format: { type: 'json_object' },
-        temperature: 0.1,
-      }),
-    });
-
-    if (!res.ok) {
-      throw new Error(`Erreur API Vision (${model}): ${res.statusText}`);
-    }
-
-    const data = await res.json();
-    return JSON.parse(data.choices?.[0]?.message?.content) as RoofDetectionResult;
-  }
-
-  /**
-   * Moteur de validation déterministe côté serveur
-   */
-  private validateAndNormalize(raw: RoofDetectionResult): RoofDetectionResult {
-    const count = Math.min(Math.max(raw.suggestedPanelCount || 12, 1), 60);
-    const power = raw.suggestedPeakPowerKWp || parseFloat((count * 0.425).toFixed(2));
-
-    return {
-      hasRoof: raw.hasRoof ?? true,
-      confidence: raw.confidence ?? 0.9,
-      roofPolygon: Array.isArray(raw.roofPolygon) && raw.roofPolygon.length >= 3
-        ? raw.roofPolygon
-        : [[300, 200], [300, 800], [600, 800], [600, 200]],
-      pitchEstimateDeg: raw.pitchEstimateDeg || 30,
-      orientation: raw.orientation || 'SUD',
-      suggestedPanelCount: count,
-      suggestedPeakPowerKWp: power,
-    };
-  }
-
-  async extractCerfaFields(address: string, notes?: string): Promise<Record<string, any>> {
-    return {
-      descriptif: `Pose de modules solaires photovoltaïques en toiture sur la commune liée à l'adresse ${address}.`,
-      hauteurMax: 6.5,
-      empriseSolM2: 0,
-      surfacePlancherCreeM2: 0,
-    };
-  }
-
-  private fallbackDetection(): RoofDetectionResult {
-    return {
-      hasRoof: true,
-      confidence: 0.9,
-      roofPolygon: [
-        [320, 240],
-        [310, 760],
-        [580, 850],
-        [590, 150],
-      ],
-      pitchEstimateDeg: 30,
-      orientation: 'SUD',
-      suggestedPanelCount: 12,
-      suggestedPeakPowerKWp: 5.1,
-    };
   }
 }
 
 export function getVisionRouter(): VisionProvider {
-  return new TwoStageGeminiVisionProvider();
+  return new RealGeminiVisionProvider();
 }
