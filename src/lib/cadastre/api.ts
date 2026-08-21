@@ -40,41 +40,53 @@ export async function searchAddress(query: string, limit: number = 5): Promise<A
 
 /**
  * Récupération de la parcelle cadastrale à partir des coordonnées GPS (lon, lat)
- * Utilise l'API Cadastre OpenData (apicarto.ign.fr ou cadastre.data.gouv.fr)
+ * Utilise l'API Cadastre OpenData Apicarto IGN avec buffer de tolérance voirie.
  */
 export async function getCadastreParcel(lon: number, lat: number): Promise<CadastreParcelInfo | null> {
   try {
-    const apicartoUrl = `https://apicarto.ign.fr/api/cadastre/parcelle?geom=${encodeURIComponent(
-      JSON.stringify({
-        type: "Point",
-        coordinates: [lon, lat],
-      })
-    )}`;
+    // 1. Essai direct par point
+    const pointGeom = JSON.stringify({ type: "Point", coordinates: [lon, lat] });
+    const apicartoUrl = `https://apicarto.ign.fr/api/cadastre/parcelle?geom=${encodeURIComponent(pointGeom)}`;
 
-    const res = await fetch(apicartoUrl, {
-      headers: { Accept: "application/json" },
-    });
+    let res = await fetch(apicartoUrl, { headers: { Accept: "application/json" } });
+    let data = res.ok ? await res.json() : null;
 
-    if (res.ok) {
-      const data = await res.json();
-      const feature = data.features?.[0];
-      if (feature) {
-        return {
-          id:
-            feature.properties.id ||
-            `${feature.properties.code_insee}${feature.properties.section}${feature.properties.numero}`,
-          commune: feature.properties.nom_com || "",
-          codeCommune: feature.properties.code_insee || "",
-          section: feature.properties.section || "",
-          numero: feature.properties.numero || "",
-          contenance: feature.properties.contenance || 0,
-          coordinates: [lon, lat],
-          geometry: feature.geometry,
-        };
+    // 2. Si le point exact tombe sur le domaine public / voirie, recherche avec BBox buffer (~10m)
+    if (!data?.features || data.features.length === 0) {
+      const delta = 0.0001;
+      const bboxGeom = JSON.stringify({
+        type: "Polygon",
+        coordinates: [[
+          [lon - delta, lat - delta],
+          [lon + delta, lat - delta],
+          [lon + delta, lat + delta],
+          [lon - delta, lat + delta],
+          [lon - delta, lat - delta]
+        ]]
+      });
+      const bufferUrl = `https://apicarto.ign.fr/api/cadastre/parcelle?geom=${encodeURIComponent(bboxGeom)}`;
+      res = await fetch(bufferUrl, { headers: { Accept: "application/json" } });
+      if (res.ok) {
+        data = await res.json();
       }
     }
 
-    // Fallback gracieux si l'API est temporairement en maintenance
+    const feature = data?.features?.[0];
+    if (feature) {
+      return {
+        id:
+          feature.properties.id ||
+          `${feature.properties.code_insee}${feature.properties.section}${feature.properties.numero}`,
+        commune: feature.properties.nom_com || "",
+        codeCommune: feature.properties.code_insee || "",
+        section: feature.properties.section || "",
+        numero: feature.properties.numero || "",
+        contenance: feature.properties.contenance || 0,
+        coordinates: [lon, lat],
+        geometry: feature.geometry,
+      };
+    }
+
     return {
       id: `PARCELLE-${Math.floor(lon * 10000)}-${Math.floor(lat * 10000)}`,
       commune: "Commune identifiée",
