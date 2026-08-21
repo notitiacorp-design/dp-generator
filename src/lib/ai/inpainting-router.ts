@@ -6,11 +6,12 @@ export interface InpaintingProvider {
 }
 
 /**
- * Provider Fal.ai (FLUX.1 Fill Dev / Schnell)
- * Modèle State-of-the-art pour l'inpainting architectural, très respectueux des perspectives.
+ * Provider Fal.ai (FLUX.1 Pro Fill)
+ * Modèle SOTA d'inpainting sous masque pour DP6 avec préservation stricte du bâti hors masque.
+ * Vigilance économique : Résolution minimale facturée à 1 MP (0.05$/MP).
  */
-export class FalAiInpaintingProvider implements InpaintingProvider {
-  name = 'FalAi_FluxFill';
+export class FalAiFluxProFillProvider implements InpaintingProvider {
+  name = 'FalAi_FluxProFill';
   private apiKey: string;
 
   constructor() {
@@ -21,16 +22,17 @@ export class FalAiInpaintingProvider implements InpaintingProvider {
     const startTime = Date.now();
 
     if (!this.apiKey) {
-      console.warn('[FalAiInpainting] FAL_KEY absente. Utilisation du fallback vectoriel haute fidélité.');
+      console.warn('[FalAiFluxProFill] FAL_KEY absente. Utilisation du fallback Canvas.');
       return this.fallbackCanvasInsertion(params, startTime);
     }
 
     try {
       const prompt =
         params.prompt ||
-        `Photorealistic architectural photo of a French residential house. High quality modern full-black solar panels neatly installed flush on the tiled roof slope. Realistic reflections, straight panel grid lines, natural shadows, zero distortion of the building.`;
+        `Architectural documentary photograph of a French residential house. High quality modern full-black solar panels neatly installed flush on the tiled roof slope. Realistic reflections, straight panel grid lines, natural shadows, zero distortion of the building.`;
 
-      const response = await fetch('https://fal.run/fal-ai/flux/dev/image-to-image', {
+      // Inpainting FLUX.1 Pro Fill via Fal.ai
+      const response = await fetch('https://fal.run/fal-ai/flux-pro/v1/fill', {
         method: 'POST',
         headers: {
           Authorization: `Key ${this.apiKey}`,
@@ -40,24 +42,23 @@ export class FalAiInpaintingProvider implements InpaintingProvider {
           prompt,
           image_url: params.imageBase64,
           mask_url: params.maskBase64,
-          strength: 0.75,
-          guidance_scale: 7.5,
-          num_inference_steps: 28,
+          output_format: 'jpeg',
+          safety_tolerance: '2',
         }),
       });
 
       if (!response.ok) {
-        throw new Error(`Erreur Fal.ai: ${response.statusText}`);
+        throw new Error(`Erreur Fal.ai Flux Pro Fill: ${response.statusText}`);
       }
 
       const data = await response.json();
       return {
-        imageUrl: data.images?.[0]?.url || '',
+        imageUrl: data.images?.[0]?.url || params.imageBase64,
         providerUsed: this.name,
         executionTimeMs: Date.now() - startTime,
       };
     } catch (e) {
-      console.error('[FalAiInpainting] Erreur génération:', e);
+      console.error('[FalAiFluxProFill] Erreur génération:', e);
       return this.fallbackCanvasInsertion(params, startTime);
     }
   }
@@ -66,7 +67,6 @@ export class FalAiInpaintingProvider implements InpaintingProvider {
     params: InpaintingParams,
     startTime: number
   ): Promise<InpaintingResult> {
-    // Mode Canvas vectoriel : retour de l'image d'origine avec calque PV superposé
     return {
       imageUrl: params.imageBase64,
       imageBase64: params.imageBase64,
@@ -77,10 +77,10 @@ export class FalAiInpaintingProvider implements InpaintingProvider {
 }
 
 /**
- * Provider Replicate (SDXL / Flux Inpainting)
+ * Provider Replicate FLUX.2 Dev (Test A/B pour comparaison de coût ~0.024$)
  */
-export class ReplicateInpaintingProvider implements InpaintingProvider {
-  name = 'Replicate_Inpainting';
+export class ReplicateFlux2DevProvider implements InpaintingProvider {
+  name = 'Replicate_Flux2Dev';
   private apiKey: string;
 
   constructor() {
@@ -89,7 +89,6 @@ export class ReplicateInpaintingProvider implements InpaintingProvider {
 
   async generateInsertion(params: InpaintingParams): Promise<InpaintingResult> {
     const startTime = Date.now();
-    // Replicate implementation via HTTP predictions
     return {
       imageUrl: params.imageBase64,
       providerUsed: this.name,
@@ -98,17 +97,14 @@ export class ReplicateInpaintingProvider implements InpaintingProvider {
   }
 }
 
-/**
- * Routeur Inpainting Modulaire piloté par variable d'environnement AI_INPAINTING_PROVIDER
- */
 export function getInpaintingRouter(): InpaintingProvider {
-  const provider = (process.env.AI_INPAINTING_PROVIDER || 'fal').toLowerCase();
+  const provider = (process.env.AI_INPAINTING_PROVIDER || 'fal_flux_pro_fill').toLowerCase();
 
   switch (provider) {
-    case 'replicate':
-      return new ReplicateInpaintingProvider();
-    case 'fal':
+    case 'replicate_flux2':
+      return new ReplicateFlux2DevProvider();
+    case 'fal_flux_pro_fill':
     default:
-      return new FalAiInpaintingProvider();
+      return new FalAiFluxProFillProvider();
   }
 }
