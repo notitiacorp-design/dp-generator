@@ -38,7 +38,7 @@ export default function Home() {
     setAddressQuery(q);
     if (q.length < 3) return;
     try {
-      const res = await fetch(`/api/cadastre?query=${encodeURIComponent(q)}`);
+      const res = await fetch(`/api/cadastre?q=${encodeURIComponent(q)}`);
       const data = await res.json();
       if (data.success) {
         setSearchResults(data.results || []);
