@@ -43,3 +43,7 @@ next-env.d.ts
 # feedback-loop artifacts
 /public/results/
 /renders/feedback_loop/
+
+# e2e generated artifacts
+/output/
+/tpl_render/

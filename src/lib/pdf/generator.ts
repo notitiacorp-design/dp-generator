@@ -52,7 +52,7 @@ export async function generateDPPackPdf(request: DPPackGenerationRequest): Promi
   pDemandeur.drawText(numVoie, { x: 95, y: 488, size: 8.5, font, color: inkColor });
   pDemandeur.drawText(nomVoie, { x: 180, y: 488, size: 8.5, font, color: inkColor });
   pDemandeur.drawText(cerfaData.demandeur.codePostal || '77200', { x: 110, y: 450, size: 8.5, font, color: inkColor });
-  pDemandeur.drawText(cerfaData.demandeur.ville || 'Torcy', { x: 280, y: 450, size: 8.5, font, color: inkColor });
+  pDemandeur.drawText(cerfaData.demandeur.ville || 'Torcy', { x: 298, y: 450, size: 8.5, font, color: inkColor });
 
   // Coordonnées de contact
   pDemandeur.drawText(cerfaData.demandeur.telephone || '06 12 34 56 78', { x: 140, y: 422, size: 8.5, font, color: inkColor });
@@ -72,10 +72,10 @@ export async function generateDPPackPdf(request: DPPackGenerationRequest): Promi
   pTerrain.drawText(cerfaData.terrain.codePostal || '77200', { x: 110, y: 475, size: 8.5, font, color: inkColor });
   pTerrain.drawText(cerfaData.terrain.commune || 'Torcy', { x: 280, y: 475, size: 8.5, font, color: inkColor });
 
-  // Références cadastrales (Section / Numéro / Superficie)
-  pTerrain.drawText(cerfaData.terrain.section || 'BD', { x: 115, y: 395, size: 9, font: boldFont, color: inkColor });
-  pTerrain.drawText(cerfaData.terrain.numeroParcelle || '0141', { x: 210, y: 395, size: 9, font: boldFont, color: inkColor });
-  pTerrain.drawText(`${cerfaData.terrain.superficieTerrainM2 || 597} m²`, { x: 350, y: 395, size: 9, font: boldFont, color: inkColor });
+  // Références cadastrales (Section / Numéro / Superficie) — calé au millimétre sur les cases réelles
+  pTerrain.drawText(cerfaData.terrain.section || 'BD', { x: 183, y: 401, size: 9, font: boldFont, color: inkColor });
+  pTerrain.drawText(cerfaData.terrain.numeroParcelle || '0141', { x: 253, y: 401, size: 9, font: boldFont, color: inkColor });
+  pTerrain.drawText(`${cerfaData.terrain.superficieTerrainM2 || 597} m²`, { x: 465, y: 401, size: 9, font: boldFont, color: inkColor });
 
   // =========================================================================
   // PAGE 6 : CADRE 5 - COURTE DESCRIPTION DES TRAVAUX
