@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
-import { runFeedbackLoop } from '../../../lib/ai/feedback-loop';
+import { runFeedbackLoop } from '../../../../lib/ai/feedback-loop';
 
 export const maxDuration = 120;
 export const dynamic = 'force-dynamic';
