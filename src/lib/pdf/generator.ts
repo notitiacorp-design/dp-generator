@@ -34,29 +34,36 @@ export async function generateDPPackPdf(request: DPPackGenerationRequest): Promi
   // PAGE 4 : CADRE 1 - IDENTITÉ DU DEMANDEUR
   // =========================================================================
   
-  // Nom & Prénom
-  pDemandeur.drawText((cerfaData.demandeur.nom || 'LEFEBVRE').toUpperCase(), { x: 80, y: 787, size: 9, font: boldFont, color: inkColor });
-  pDemandeur.drawText(cerfaData.demandeur.prenom || 'Thomas', { x: 360, y: 787, size: 9, font: boldFont, color: inkColor });
+  // Nom & Prénom (boîtes ytop=784, ybottom=769)
+  pDemandeur.drawText((cerfaData.demandeur.nom || 'LEFEBVRE').toUpperCase(), { x: 58, y: 776, size: 9, font: boldFont, color: inkColor });
+  pDemandeur.drawText(cerfaData.demandeur.prenom || 'Thomas', { x: 320, y: 776, size: 9, font: boldFont, color: inkColor });
 
-  // Date et lieu de naissance
-  pDemandeur.drawText('15/04/1985', { x: 120, y: 747, size: 8.5, font, color: inkColor });
-  pDemandeur.drawText('Paris', { x: 230, y: 747, size: 8.5, font, color: inkColor });
-  pDemandeur.drawText('75', { x: 380, y: 747, size: 8.5, font, color: inkColor });
-  pDemandeur.drawText('France', { x: 450, y: 747, size: 8.5, font, color: inkColor });
+  // Date et lieu de naissance — champs distincts (déterminé par analyse du template)
+  // Date (8 cases : ytop=764, ybottom=749), Commune (ytop=744 x=105 w=340), Département (3 cases ytop=724), Pays (ytop=724 x=216)
+  // Date de naissance — découpée case par case (8 cases : x de 208 à 348, ytop=764/bottom=749, larg 14, pas ~19)
+  const naissance = (cerfaData.demandeur.dateNaissance || '15/04/1985').replace(/\//g, '');
+  const dateDigits = naissance.slice(0, 8).padEnd(8, ' ').split('');
+  dateDigits.forEach((d, i) => {
+    if (d === ' ') return;
+    pDemandeur.drawText(d, { x: 209 + i * 19, y: 756, size: 9, font: boldFont, color: inkColor });
+  });
+  pDemandeur.drawText(cerfaData.demandeur.lieuNaissance || 'Paris', { x: 110, y: 733, size: 8.5, font, color: inkColor });
+  pDemandeur.drawText((cerfaData.demandeur as any).deptNaissance || '75', { x: 119, y: 713, size: 8.5, font, color: inkColor });
+  pDemandeur.drawText((cerfaData.demandeur as any).paysNaissance || 'France', { x: 220, y: 714, size: 8.5, font, color: inkColor });
 
-  // Adresse postale
+  // Adresse postale — Numéro (x=143 ytop=519), Voie (x=260), Localité (ytop=499), Code postal (cases ytop=459)
   const addr = cerfaData.demandeur.adresse || '14 Allée des Cerisiers';
   const numVoie = addr.split(' ')[0] || '14';
   const nomVoie = addr.replace(numVoie, '').trim() || 'Allée des Cerisiers';
-  
-  pDemandeur.drawText(numVoie, { x: 95, y: 488, size: 8.5, font, color: inkColor });
-  pDemandeur.drawText(nomVoie, { x: 180, y: 488, size: 8.5, font, color: inkColor });
-  pDemandeur.drawText(cerfaData.demandeur.codePostal || '77200', { x: 110, y: 450, size: 8.5, font, color: inkColor });
-  pDemandeur.drawText(cerfaData.demandeur.ville || 'Torcy', { x: 298, y: 450, size: 8.5, font, color: inkColor });
 
-  // Coordonnées de contact
-  pDemandeur.drawText(cerfaData.demandeur.telephone || '06 12 34 56 78', { x: 140, y: 422, size: 8.5, font, color: inkColor });
-  pDemandeur.drawText(cerfaData.demandeur.email || 'thomas.lefebvre@pro-solaire.fr', { x: 80, y: 350, size: 8.5, font, color: inkColor });
+  pDemandeur.drawText(numVoie, { x: 145, y: 507, size: 8.5, font, color: inkColor });
+  pDemandeur.drawText(nomVoie, { x: 264, y: 507, size: 8.5, font, color: inkColor });
+  pDemandeur.drawText(cerfaData.demandeur.ville || 'Torcy', { x: 97, y: 471, size: 8.5, font, color: inkColor });
+  pDemandeur.drawText(cerfaData.demandeur.codePostal || '77200', { x: 114, y: 448, size: 8.5, font, color: inkColor });
+
+  // Coordonnées de contact — Téléphone (cases ytop=439) & Email (champ au-dessus de @, ytop=369)
+  pDemandeur.drawText(cerfaData.demandeur.telephone || '06 12 34 56 78', { x: 113, y: 428, size: 8.5, font, color: inkColor });
+  pDemandeur.drawText(cerfaData.demandeur.email || 'thomas.lefebvre@pro-solaire.fr', { x: 54, y: 358, size: 8.5, font, color: inkColor });
 
   // =========================================================================
   // PAGE 5 : CADRE 2 & 3 - TERRAIN DU PROJET & CADASTRE
