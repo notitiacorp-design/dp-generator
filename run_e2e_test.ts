@@ -63,14 +63,32 @@ async function main() {
 
   // 2. Résolution cadastrale Apicarto
   t = Date.now();
-  let cadastre: any = null;
+  let parcelRef: { section?: string; numero?: string; contenance?: number; commune?: string } | null = null;
   try {
     const pt = { type: 'Point', coordinates: [LON, LAT] };
     const cUrl = `https://apicarto.ign.fr/api/cadastre/parcelle?geom=${encodeURIComponent(JSON.stringify(pt))}`;
     const cr = await fetch(cUrl);
-    if (cr.ok) { cadastre = await cr.json(); }
+    if (cr.ok) {
+      const j = await cr.json();
+      // Apicarto renvoie une FeatureCollection : { type, features: [{ geometry, properties }] }
+      const feat = j?.features?.[0];
+      if (feat?.properties) {
+        parcelRef = {
+          section: feat.properties.section,
+          numero: feat.properties.numero,
+          contenance: feat.properties.contenance,
+          commune: feat.properties.nom_com || feat.properties.commune,
+        };
+      }
+    }
   } catch (e) { /* fallback */ }
-  tick('2. Résolution cadastrale Apicarto', t, cadastre ? `Parcelle ${cadastre.section || ''} ${cadastre.numero || ''} (${cadastre.contenance || ''} m²)` : 'Fallback coords réf.');
+  tick(
+    '2. Résolution cadastrale Apicarto',
+    t,
+    parcelRef?.section
+      ? `Parcelle ${parcelRef.section} ${parcelRef.numero} (${parcelRef.contenance} m², ${parcelRef.commune || ''})`
+      : 'Fallback coords réf.'
+  );
 
   // 3. DP6 : Vision détection de la toiture
   t = Date.now();
