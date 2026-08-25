@@ -3,10 +3,13 @@ import { getVisionRouter } from '../../../lib/ai/vision-router';
 import { getInpaintingRouter } from '../../../lib/ai/inpainting-router';
 import { InpaintingParams } from '../../../types/dp';
 
+export const maxDuration = 60; // 60s timeout
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { action, imageBase64, maskBase64, projectType, panelCount } = body;
+    const { action, imageBase64, maskBase64, projectType, panelCount, peakPower, integrationType, prompt } = body;
 
     // 1. Détection de toiture & coordonnées spatiales
     if (action === 'detect_roof') {
@@ -46,7 +49,10 @@ export async function POST(request: NextRequest) {
         maskBase64,
         roofPolygon: detectedRoofPolygon,
         projectType: projectType || 'SOLAR_PANELS',
-        panelCount: panelCount || 12,
+        panelCount: panelCount ? Number(panelCount) : 14,
+        peakPower: peakPower ? Number(peakPower) : 6.0,
+        integrationType: integrationType || 'SURIMPOSE',
+        prompt,
       };
 
       const result = await inpaintingRouter.generateInsertion(params);

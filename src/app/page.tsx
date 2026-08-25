@@ -88,6 +88,12 @@ export default function Home() {
     setCalculatingInsertion(true);
     setErrorMessage(null);
     try {
+      console.log('[Frontend] Lancement calcul insertion DP6...');
+      const integrationLabels: Record<string, string> = {
+        'SURIMPOSE': 'en surimposition sur rails discrets',
+        'INTEGRE': 'intégré au bâti',
+        'SOL': 'structure au sol',
+      };
       const res = await fetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -95,18 +101,29 @@ export default function Home() {
           action: 'inpaint_dp6',
           imageBase64: roofImage,
           panelCount,
+          peakPower: powerKwc,
+          integrationType: integrationLabels[poseType] || 'en surimposition sur rails discrets',
         }),
       });
-      const data = await res.json();
+
+      console.log(`[Frontend] Réponse HTTP /api/ai reçue avec status: ${res.status}`);
+      let data: any = {};
+      try {
+        data = await res.json();
+      } catch (jsonErr: any) {
+        console.error('[Frontend] Échec parsing JSON réponse serveur:', jsonErr);
+        throw new Error(`Réponse non-JSON du serveur (HTTP ${res.status})`);
+      }
+
       if (!res.ok || !data.success) {
-        throw new Error(data.error || `Erreur HTTP ${res.status}`);
+        throw new Error(data.error || `Erreur serveur HTTP ${res.status}`);
       }
       if (data.result) {
         setInsertionImage(data.result.imageUrl || data.result.imageBase64);
         setActiveTab('after');
       }
     } catch (e: any) {
-      console.error('[Frontend] Erreur Inpainting API:', e);
+      console.error('[Frontend] Erreur complète Inpainting API:', e);
       setErrorMessage(`Échec inférence IA : ${e.message}`);
     } finally {
       setCalculatingInsertion(false);
@@ -548,7 +565,7 @@ export default function Home() {
 
                   {/* Badge statut */}
                   <div className="absolute bottom-3 right-3 bg-slate-900/80 backdrop-blur border border-slate-700/60 rounded px-2.5 py-1 text-[10px] text-slate-300 font-mono">
-                    {activeTab === 'after' ? 'DP6 : Après travaux (14 modules)' : 'DP6 : Avant travaux'}
+                    {activeTab === 'after' ? `DP6 : Après travaux (${panelCount} modules)` : 'DP6 : Avant travaux'}
                   </div>
                 </div>
 

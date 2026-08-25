@@ -1,4 +1,5 @@
 import { RoofDetectionResult } from '../../types/dp';
+import sharp from 'sharp';
 
 export interface VisionProvider {
   name: string;
@@ -41,19 +42,41 @@ export class RealGeminiVisionProvider implements VisionProvider {
     const startTime = Date.now();
     console.log(`[VisionProvider] Appel API Inférence Vision Réelle (${this.model})...`);
 
-    const systemPrompt = `Tu es un expert en métré photovoltaïque et analyse architecturale.
+    const systemPrompt = `Tu es un expert en métré photovoltaïque, vision par ordinateur et géométrie projective architecturale.
 Analyse la photographie de toiture fournie et retourne EXCLUSIVEMENT un objet JSON valide avec les propriétés suivantes :
 - hasRoof: (boolean) true si une toiture résidentielle/bâtiment est visible
 - confidence: (number) score de confiance entre 0.0 et 1.0
-- roofPolygon: (tableau de 4 points [ymin, xmin, ymax, xmax] ou coordonnées normalisées 0-1000 délimitant la zone de toiture libre exploitable sans fenêtre de toit ni obstacle)
+- roofPolygon: tableau ordonné de 4 points [[y, x], [y, x], [y, x], [y, x]] en coordonnées normalisées 0-1000 délimitant STRICTEMENT les 4 coins du pan de toiture libre en vraie perspective :
+    * Point 0: Haut-Gauche (coin faîtage / rive gauche ou limite gauche sous le faîtage)
+    * Point 1: Haut-Droite (coin faîtage / rive droite sous le faîtage)
+    * Point 2: Bas-Droite (coin égout/gouttière / rive droite au-dessus de la gouttière)
+    * Point 3: Bas-Gauche (coin égout/gouttière / rive gauche ou bord libre)
+  ATTENTION STRICTE :
+  - Respecte la perspective réelle : le quadrilatère doit suivre les lignes de fuite des tuiles et des chevrons.
+  - Exclus strictement les fenêtres de toit (Velux), cheminées et obstacles.
+  - Reste à l'intérieur du pan de toiture (ne déborde ni dans le ciel ni sur la façade).
 - pitchEstimateDeg: (number) estimation de la pente de toiture en degrés (ex: 30)
 - orientation: (string) orientation estimée (ex: "SUD", "SUD-EST", "EST", "OUEST")
 - suggestedPanelCount: (number) nombre optimal de panneaux solaires installables sur le pan libre
 - suggestedPeakPowerKWp: (number) puissance crête estimée en kWc`;
 
-    const cleanBase64 = imageBase64.startsWith('data:')
-      ? imageBase64
-      : `data:image/jpeg;base64,${imageBase64}`;
+    // Normalisation et redimensionnement préliminaire (Sharp max 1600px) pour éviter timeouts et payloads excessifs
+    let processedBase64 = imageBase64;
+    try {
+      const rawData = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+      const inputBuffer = Buffer.from(rawData, 'base64');
+      const resizedBuffer = await sharp(inputBuffer)
+        .resize({ width: 1600, height: 1600, fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 85 })
+        .toBuffer();
+      processedBase64 = `data:image/jpeg;base64,${resizedBuffer.toString('base64')}`;
+      console.log(`[VisionProvider] Image optimisée via Sharp (${(resizedBuffer.length / 1024).toFixed(1)} Ko)`);
+    } catch (e: any) {
+      console.warn('[VisionProvider] Redimensionnement Sharp ignoré, utilisation image source brute:', e?.message);
+      processedBase64 = imageBase64.startsWith('data:')
+        ? imageBase64
+        : `data:image/jpeg;base64,${imageBase64}`;
+    }
 
     try {
       const res = await fetch(`${this.baseUrl}/chat/completions`, {
@@ -78,7 +101,7 @@ Analyse la photographie de toiture fournie et retourne EXCLUSIVEMENT un objet JS
                 },
                 {
                   type: 'image_url',
-                  image_url: { url: cleanBase64 },
+                  image_url: { url: processedBase64 },
                 },
               ],
             },
