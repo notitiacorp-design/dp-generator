@@ -106,6 +106,8 @@ export interface CerfaFormData {
 
 export interface DPPackGenerationRequest {
   cerfaData: CerfaFormData;
+  /** Géométrie GeoJSON réelle de la parcelle (Apicarto) pour DP1/DP2 — polygone exact */
+  parcelGeometry?: any;
   dp1ImageBase64?: string;
   dp2ImageBase64?: string;
   dp6BeforeImageBase64?: string;

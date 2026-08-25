@@ -1,7 +1,7 @@
 import { InpaintingParams, InpaintingResult } from '../../types/dp';
 import sharp from 'sharp';
 import { generateSolarMatrix, Point2D } from './solar-matrix';
-import { renderPhotovoltaicOverlay } from './solar-renderer';
+import { renderPhotomontage } from '../canvas/photomontage';
 
 export interface InpaintingProvider {
   name: string;
@@ -96,9 +96,9 @@ export class RealGenerativeInpaintingProvider implements InpaintingProvider {
       }
     }
 
-    // 1. GÉNÉRATION DIRECTE HAUTE DÉFINITION DÉTERMINISTE (Moteur CAO Sharp / Canvas)
-    console.log(`[InpaintingProvider] Rendu graphique HD déterministe pour ${panelCount} modules sur toiture...`);
-    const { resultBuffer, rows, cols } = await renderPhotovoltaicOverlay(
+    // 1. GÉNÉRATION DIRECTE HAUTE DÉFINITION DÉTERMINISTE (Moteur photomontage texture réaliste)
+    console.log(`[InpaintingProvider] Rendu photomontage réaliste pour ${panelCount} modules sur toiture...`);
+    const { resultBuffer, rows, cols } = await renderPhotomontage(
       imgBuf,
       quadCorners,
       panelCount,

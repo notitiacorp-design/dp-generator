@@ -29,13 +29,23 @@ function readAsDataURL(file: File): Promise<string> {
 export default function Home() {
   const [step, setStep] = useState<Step>(1);
 
-  // Étape 1 — adresse & cadastre
+  // Étape 1 — adresse, cadastre & demandeur
   const [addressQuery, setAddressQuery] = useState('');
   const [searchResults, setSearchResults] = useState<AddressSearchResult[]>([]);
   const [selectedAddress, setSelectedAddress] = useState<AddressSearchResult | null>(null);
   const [parcelInfo, setParcelInfo] = useState<CadastreParcelInfo | null>(null);
   const [loadingParcel, setLoadingParcel] = useState(false);
   const [searching, setSearching] = useState(false);
+  const [demandeur, setDemandeur] = useState({
+    nom: 'LEFEBVRE',
+    prenom: 'Thomas',
+    societe: '',
+    telephone: '06 12 34 56 78',
+    email: 'thomas.lefebvre@pro-solaire.fr',
+    adresse: '14 Allée des Cerisiers',
+    codePostal: '77200',
+    ville: 'Torcy',
+  });
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Étape 2 — toiture & puissance
@@ -43,6 +53,8 @@ export default function Home() {
   const [panelCount, setPanelCount] = useState(14);
   const [powerKwc, setPowerKwc] = useState(5.95);
   const [poseType, setPoseType] = useState('SURIMPOSE');
+  const [dp7Image, setDp7Image] = useState<string | null>(null);
+  const [dp8Image, setDp8Image] = useState<string | null>(null);
   const [insertionImage, setInsertionImage] = useState<string | null>(null);
   const [calculating, setCalculating] = useState(false);
   const [displayAfter, setShowAfter] = useState(true);
@@ -56,7 +68,7 @@ export default function Home() {
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
   const [pdfName, setPdfName] = useState('Dossier_DP_Solaire.pdf');
 
-  const QUICK_COUNTS = [6, 8, 10, 14];
+  const QUICK_COUNTS = [6, 8, 10, 12, 14];
 
   // ---------------- adresse (BAN autocomplete)
   const handleSearchAddress = useCallback((q: string) => {
@@ -174,7 +186,13 @@ export default function Home() {
       const payload: DPPackGenerationRequest = {
         cerfaData: {
           demandeur: {
-            ...demandeurFields,
+            nom: demandeur.nom,
+            prenom: demandeur.prenom,
+            email: demandeur.email,
+            telephone: demandeur.telephone,
+            adresse: demandeur.adresse,
+            codePostal: demandeur.codePostal,
+            ville: demandeur.ville,
             qualite: 'PROPRIETAIRE',
           },
           terrain: {
@@ -193,10 +211,13 @@ export default function Home() {
             typePose: poseType as any,
             descriptionCourte: `Installation de ${panelCount} capteurs photovoltaïques (${powerKwc} kWc) en surimposition de toiture existante en champ continu régulier.`,
           },
-          pieces: { dp1: true, dp2: true, dp3: false, dp6: true, dp7: false, dp8: false },
+          pieces: { dp1: true, dp2: true, dp3: false, dp6: true, dp7: !!dp7Image, dp8: !!dp8Image },
         },
+        parcelGeometry: (parcelInfo as any)?.geometry || undefined,
         dp6BeforeImageBase64: roofImage || undefined,
         dp6AfterImageBase64: insertionImage || undefined,
+        dp7ImageBase64: dp7Image || undefined,
+        dp8ImageBase64: dp8Image || undefined,
       };
 
       const res = await fetch('/api/generate-pdf', {
@@ -218,17 +239,6 @@ export default function Home() {
     } finally {
       setGeneratingPdf(false);
     }
-  };
-
-  const demandeurAdresseDefault = '14 Allée des Cerisiers 77200 Torcy';
-  const demandeurFields = {
-    nom: 'LEFEBVRE',
-    prenom: 'Thomas',
-    email: 'thomas.lefebvre@pro-solaire.fr',
-    telephone: '06 12 34 56 78',
-    adresse: '14 Allée des Cerisiers',
-    codePostal: '77200',
-    ville: 'Torcy',
   };
 
   // ---------------- test prérempli 1 clic
@@ -265,6 +275,8 @@ export default function Home() {
     setStep(3);
     if (!pdfBlobUrl) await handleGeneratePdf();
   };
+
+  const demandeurAdresseDefault = '14 Allée des Cerisiers 77200 Torcy';
 
   // ---------------------------------------------------------------- UI
   const cf = {
@@ -379,6 +391,44 @@ export default function Home() {
               <div className="mt-3 flex items-center gap-2 text-[11px]">{/* spacer */}
                 <span className={`inline-flex items-center px-2 py-0.5 rounded ${cf.badge}`}>Source IGN Apicarto</span>
               </div>
+
+              {/* Demandeur — identité & contact */}
+              <div className={`mt-5 pt-4 border-t ${cf.border}`}>
+                <div className={cf.label}>Demandeur de la déclaration</div>
+                <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className={cf.label}>Nom</label>
+                    <input type="text" value={demandeur.nom} onChange={(e) => setDemandeur({ ...demandeur, nom: e.target.value })}
+                      placeholder="Nom" className={`w-full mt-1 rounded-lg ${cf.input} px-3 py-2 text-sm outline-none`} />
+                  </div>
+                  <div>
+                    <label className={cf.label}>Prénom</label>
+                    <input type="text" value={demandeur.prenom} onChange={(e) => setDemandeur({ ...demandeur, prenom: e.target.value })}
+                      placeholder="Prénom" className={`w-full mt-1 rounded-lg ${cf.input} px-3 py-2 text-sm outline-none`} />
+                  </div>
+                  <div>
+                    <label className={cf.label}>Société / SIRET (facultatif)</label>
+                    <input type="text" value={demandeur.societe} onChange={(e) => setDemandeur({ ...demandeur, societe: e.target.value })}
+                      placeholder="Ex : PRO-SOLAIRE SAS" className={`w-full mt-1 rounded-lg ${cf.input} px-3 py-2 text-sm outline-none`} />
+                  </div>
+                  <div>
+                    <label className={cf.label}>Adresse de contact</label>
+                    <input type="text" value={demandeur.adresse} onChange={(e) => setDemandeur({ ...demandeur, adresse: e.target.value })}
+                      placeholder="N° et voie" className={`w-full mt-1 rounded-lg ${cf.input} px-3 py-2 text-sm outline-none`} />
+                  </div>
+                  <div>
+                    <label className={cf.label}>Téléphone</label>
+                    <input type="tel" value={demandeur.telephone} onChange={(e) => setDemandeur({ ...demandeur, telephone: e.target.value })}
+                      placeholder="06 12 34 56 78" className={`w-full mt-1 rounded-lg ${cf.input} px-3 py-2 text-sm outline-none`} />
+                  </div>
+                  <div>
+                    <label className={cf.label}>Email</label>
+                    <input type="email" value={demandeur.email} onChange={(e) => setDemandeur({ ...demandeur, email: e.target.value })}
+                      placeholder="contact@exemple.fr" className={`w-full mt-1 rounded-lg ${cf.input} px-3 py-2 text-sm outline-none`} />
+                  </div>
+                </div>
+                <p className="mt-2 text-[10px] text-zinc-500">Le téléphone est inscrit chiffre par chiffre dans les cases du Cerfa ; l'email au-dessus du symbole @.</p>
+              </div>
             </div>
             <div className={`${cf.panel} border rounded-xl p-5 flex flex-col justify-between`}>
               <div>
@@ -467,6 +517,23 @@ export default function Home() {
                       <option value="SOL">Structure au sol / Ombrière</option>
                     </select>
                   </div>
+
+                  {/* Photos complémentaires DP7 / DP8 (facultatives, ABF le cas échéant) */}
+                  <div className="mt-4 pt-3 border-t border-zinc-800">
+                    <div className="text-[11px] font-medium text-zinc-500 mb-2">Photos complémentaires (facultatif — DP7 / DP8)</div>
+                    <div className="grid grid-cols-2 gap-3">
+                      {([['DP7', dp7Image, setDp7Image, 'Vue proche / rue'], ['DP8', dp8Image, setDp8Image, 'Vue lointaine']] as const).map(([tag, img, setter, hint]) => (
+                        <div key={tag}>
+                          <label className={`flex items-center gap-2 cursor-pointer rounded-lg border border-dashed ${img ? 'border-emerald-700 bg-emerald-950/20' : 'border-zinc-700 hover:border-zinc-500'} px-3 py-2.5 text-xs transition`}>
+                            <input type="file" accept="image/*" className="hidden"
+                              onChange={async (e) => { const f = e.target.files?.[0]; if (f) setter(await readAsDataURL(f)); }} />
+                            <span className={img ? 'text-emerald-400' : 'text-zinc-400'}>{img ? '✓' : '+'} {tag}</span>
+                            <span className="text-zinc-500 truncate">{img ? 'photo chargée' : hint}</span>
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -541,14 +608,14 @@ export default function Home() {
             <div className="flex items-start justify-between gap-4 flex-wrap">
               <div>
                 <h2 className="text-lg font-bold text-zinc-100">Dossier de Déclaration Préalable</h2>
-                <p className="text-xs text-zinc-400 mt-1">Cerfa 13404*12 annoté · Annexe DP1 (IGN) · Annexe DP6 (insertion)</p>
+                <p className="text-xs text-zinc-400 mt-1">Cerfa 13404*12 complété (Cadre 5) · DP1 situation IGN · DP2 plan de masse · DP6 insertion · Notice technique</p>
               </div>
               <div className="flex items-center gap-3">
                 <button onClick={() => setStep(2)} className="rounded-lg border border-zinc-700 px-4 py-2.5 text-xs font-medium hover:bg-zinc-800">← Modifier</button>
                 {pdfBlobUrl ? (
                   <a href={pdfBlobUrl} download={pdfName}
                     className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 px-5 py-3 text-sm font-bold text-white shadow-lg">
-                    ⬇ Download {pdfName}
+                    ⬇ Télécharger le dossier complet officiel (PDF 6-8 pages)
                   </a>
                 ) : (
                   <button onClick={handleGeneratePdf} disabled={generatingPdf}

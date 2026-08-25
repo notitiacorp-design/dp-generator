@@ -61,9 +61,10 @@ async function main() {
     tick('1. Géocodage BAN', t, geocode ? geocode.properties.label : 'Aucun résultat');
   } catch (e) { tick('1. Géocodage BAN', t, 'ERR: ' + String(e)); }
 
-  // 2. Résolution cadastrale Apicarto
+  // 2. Résolution cadastrale Apicarto — propriétés + géométrie GeoJSON exacte
   t = Date.now();
   let parcelRef: { section?: string; numero?: string; contenance?: number; commune?: string } | null = null;
+  let parcelGeometry: any = null;
   try {
     const pt = { type: 'Point', coordinates: [LON, LAT] };
     const cUrl = `https://apicarto.ign.fr/api/cadastre/parcelle?geom=${encodeURIComponent(JSON.stringify(pt))}`;
@@ -79,6 +80,7 @@ async function main() {
           contenance: feat.properties.contenance,
           commune: feat.properties.nom_com || feat.properties.commune,
         };
+        parcelGeometry = feat.geometry ?? null;  // GeoJSON Polygon/MultiPolygon réel
       }
     }
   } catch (e) { /* fallback */ }
@@ -113,10 +115,11 @@ async function main() {
   t = Date.now();
   const pdfBytes = await generateDPPackPdf({
     cerfaData,
+    parcelGeometry,
     dp6BeforeImageBase64: roofB64,
     dp6AfterImageBase64: afterB64,
   });
-  tick('7. Assemblage PDF multipages (Cerfa + DP1 + DP6)', t);
+  tick('7. Assemblage PDF 8 pages (Cerfa×4 + DP1 + DP2 + DP6 + Notice)', t, parcelGeometry ? 'polygone cadastral réel' : 'sans géométrie');
 
   const outPdf = path.join(OUT_DIR, 'DP_LEFEBVRE_TORCY_BD_0141.pdf');
   fs.writeFileSync(outPdf, Buffer.from(pdfBytes));
